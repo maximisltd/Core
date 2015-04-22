@@ -1,0 +1,22 @@
+﻿<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office"
+          xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+          xmlns:html="http://www.w3.org/TR/REC-html40">
+  <Styles>
+    <Style ss:ID="Default" ss:Name="Normal">
+      <Alignment ss:Horizontal="Left" ss:Vertical="Top" />
+      <Font ss:FontName="Calibri" ss:Size="9" ss:Color="#000000" />
+    </Style>
+    <Style ss:ID="bold">
+      <Font ss:FontName="Calibri" ss:Size="9" ss:Color="#000000" ss:Bold="1" />
+    </Style>
+    <Style ss:ID="dateTime">
+      <NumberFormat ss:Format="General Date" />
+    </Style>
+    <Style ss:ID="percent">
+      <NumberFormat ss:Format="Percent" />
+    </Style>
+  </Styles>
+</Workbook>

@@ -1,0 +1,146 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{08EEF357-26A6-49E2-B808-033CC671C200}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Maximis.Toolkit.Xrm</RootNamespace>
+    <AssemblyName>Maximis.Toolkit.Xrm</AssemblyName>
+    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <SccProjectName>SAK</SccProjectName>
+    <SccLocalPath>SAK</SccLocalPath>
+    <SccAuxPath>SAK</SccAuxPath>
+    <SccProvider>SAK</SccProvider>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <DocumentationFile>bin\Debug\Maximis.Toolkit.Xrm.XML</DocumentationFile>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+  </PropertyGroup>
+  <PropertyGroup>
+    <AssemblyOriginatorKeyFile>maximis.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.Crm.Sdk.Proxy, Version=7.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\Microsoft.CrmSdk.CoreAssemblies.7.0.1\lib\net45\Microsoft.Crm.Sdk.Proxy.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.IdentityModel, Version=3.5.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\Microsoft.IdentityModel.6.1.7600.16394\lib\net35\Microsoft.IdentityModel.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualBasic" />
+    <Reference Include="Microsoft.Xrm.Sdk, Version=7.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\Microsoft.CrmSdk.CoreAssemblies.7.0.1\lib\net45\Microsoft.Xrm.Sdk.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.Xrm.Sdk.Deployment, Version=7.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\Microsoft.CrmSdk.Deployment.7.0.1\lib\net45\Microsoft.Xrm.Sdk.Deployment.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.Xrm.Sdk.Workflow, Version=7.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\Microsoft.CrmSdk.Workflow.7.0.1\lib\net45\Microsoft.Xrm.Sdk.Workflow.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Activities" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.ServiceModel" />
+    <Reference Include="System.XML" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Activities\ActivityHelper.cs" />
+    <Compile Include="Annotations\Annotation.cs" />
+    <Compile Include="Annotations\AnnotationAttachment.cs" />
+    <Compile Include="Annotations\AnnotationHelper.cs" />
+    <Compile Include="AuditHelper.cs" />
+    <Compile Include="BaseAutoNamePlugin.cs" />
+    <Compile Include="BaseCustomWorkflowActivity.cs" />
+    <Compile Include="DisplayStringOptions.cs" />
+    <Compile Include="EntitySerialisation\DeserialisationOptions.cs" />
+    <Compile Include="EntitySerialisation\Dictionary.cs" />
+    <Compile Include="ImportExport\CsvImportOptions.cs" />
+    <Compile Include="ImportExport\ImportOptions.cs" />
+    <Compile Include="ImportExport\CsvExportOptions.cs" />
+    <Compile Include="ImportExport\ExistingMatchAttribute.cs" />
+    <Compile Include="ImportExport\ImportExportHelper.cs" />
+    <Compile Include="ImportExport\ExportOptions.cs" />
+    <Compile Include="ImportExport\XmlImportExportHelper.cs" />
+    <Compile Include="ImportExport\CsvImportExportHelper.cs" />
+    <Compile Include="ImportExport\XmlImportManager.cs" />
+    <Compile Include="ImportExport\XmlSpreadsheet\DataItem.cs" />
+    <Compile Include="ImportExport\XmlSpreadsheet\DataRow.cs" />
+    <Compile Include="ImportExport\XmlSpreadsheet\XmlSpreadsheetHelper.cs" />
+    <Compile Include="Activities\Email.cs" />
+    <Compile Include="Activities\ActivityAttachment.cs" />
+    <Compile Include="Activities\EmailHelper.cs" />
+    <Compile Include="DuplicateDetectionHelper.cs" />
+    <Compile Include="DuplicateRecordException.cs" />
+    <Compile Include="EntityActions\BaseEntityAction.cs" />
+    <Compile Include="EntityActions\BaseEntityActionManager.cs" />
+    <Compile Include="BasePlugin.cs" />
+    <Compile Include="EntityActions\EntityActionDefinition.cs" />
+    <Compile Include="EntitySerialisation\EntityDeserialiser.cs" />
+    <Compile Include="EntitySerialisation\EntitySerialiserScope.cs" />
+    <Compile Include="EntitySerialisation\EntitySerialiser.cs" />
+    <Compile Include="FetchXmlHelper.cs" />
+    <Compile Include="CrmContext.cs" />
+    <Compile Include="BulkOperationHelper.cs" />
+    <Compile Include="MetadataCache.cs" />
+    <Compile Include="ServiceHelper.cs" />
+    <Compile Include="UpdateHelper.cs" />
+    <Compile Include="WorkflowHelper.cs" />
+    <Compile Include="ExtensionMethods.cs" />
+    <Compile Include="MetadataHelper.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="QueryHelper.cs" />
+    <Compile Include="ScheduledTasks\BaseScheduledTaskCreateUpdate.cs" />
+    <Compile Include="ScheduledTasks\BaseScheduledTaskDelete.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="maximis.snk" />
+    <None Include="Maximis.Toolkit.Xrm.nuspec" />
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="ImportExport\XmlSpreadsheet\EmptySpreadsheet.xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Maximis.Toolkit\Maximis.Toolkit.csproj">
+      <Project>{cef6d4dd-2646-47fc-b2b3-5fce20878800}</Project>
+      <Name>Maximis.Toolkit</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>
