@@ -24,10 +24,9 @@ namespace Maximis.Toolkit.Xrm.ImportExport.XmlSpreadsheet
         /// <summary>
         /// Return the results of a QueryExpression as an XmlSpreadsheet
         /// </summary>
-        public static XmlDocument GenerateXmlSpreadsheet(string worksheetName, IOrganizationService svc,
-            QueryExpression query)
+        public static XmlDocument GenerateXmlSpreadsheet(CrmContext context, QueryExpression query, string worksheetName)
         {
-            return GenerateXmlSpreadsheet(worksheetName, RetrieveData(svc, query));
+            return GenerateXmlSpreadsheet(worksheetName, RetrieveData(context, query));
         }
 
         /// <summary>
@@ -119,17 +118,16 @@ namespace Maximis.Toolkit.Xrm.ImportExport.XmlSpreadsheet
             return null;
         }
 
-        public static DataRow GetDataRowFromEntity(IOrganizationService orgService, Entity entity, MetadataCache metaCache, IEnumerable<string> columns,
-                    ModifyDataRow modifyDataRow = null)
+        public static DataRow GetDataRowFromEntity(CrmContext context, Entity entity, IEnumerable<string> columns, ModifyDataRow modifyDataRow = null)
         {
             DataRow dataRow = new DataRow();
 
-            EntityMetadata metadata = metaCache.GetEntityMetadata(orgService, entity.LogicalName);
+            EntityMetadata entityMeta = MetadataHelper.GetEntityMetadata(context, entity.LogicalName);
 
             // Loop through each Attribute
             foreach (string column in columns)
             {
-                AttributeMetadata attMeta = MetadataHelper.GetAttributeMetadata(metadata, column);
+                AttributeMetadata attMeta = MetadataHelper.GetAttributeMetadata(entityMeta, column);
 
                 // Create a DataItem
                 DataItem dataItem = new DataItem
@@ -143,7 +141,7 @@ namespace Maximis.Toolkit.Xrm.ImportExport.XmlSpreadsheet
                 if (entity.HasAttributeWithValue(column))
                 {
                     dataItem.Value = entity[column];
-                    dataItem.ValueString = MetadataHelper.GetAttributeValueAsDisplayString(orgService, metaCache, entity, column, formats);
+                    dataItem.ValueString = MetadataHelper.GetAttributeValueAsDisplayString(context, entity, column, formats);
                 }
 
                 // Add DataItem to DataRow
@@ -162,22 +160,19 @@ namespace Maximis.Toolkit.Xrm.ImportExport.XmlSpreadsheet
         /// <summary>
         /// Retrieves data from CRM and converts it to a List of DataRow objects
         /// </summary>
-        public static List<DataRow> RetrieveData(IOrganizationService orgService, QueryExpression query,
-            ModifyDataRow modifyDataRow = null)
+        public static List<DataRow> RetrieveData(CrmContext context, QueryExpression query, ModifyDataRow modifyDataRow = null)
         {
-            MetadataCache metaCache = new MetadataCache();
-
             // Create the object to return
             List<DataRow> allData = new List<DataRow>();
 
             // Loop through all retrieved entities
             EntityCollection results = null;
-            while (QueryHelper.RetrieveEntitiesWithPaging(orgService, query, ref results))
+            while (QueryHelper.RetrieveEntitiesWithPaging(context.OrganizationService, query, ref results))
             {
                 foreach (Entity entity in results.Entities)
                 {
                     // Create a new DataRow
-                    DataRow dataRow = GetDataRowFromEntity(orgService, entity, metaCache, query.ColumnSet.Columns, modifyDataRow);
+                    DataRow dataRow = GetDataRowFromEntity(context, entity, query.ColumnSet.Columns, modifyDataRow);
 
                     // Add the DataRow to the allData collection
                     allData.Add(dataRow);

@@ -13,17 +13,19 @@ namespace Maximis.Toolkit.IO
             File.AppendAllText(filePath, content);
         }
 
-        public static void EnsureDirectoryExists(string fileOrFolderPath, PathType pathType)
+        public static DirectoryInfo EnsureDirectoryExists(string fileOrFolderPath, PathType pathType)
         {
+            DirectoryInfo result = null;
             if (pathType == PathType.File)
             {
                 FileInfo fi = new FileInfo(fileOrFolderPath);
-                if (!Directory.Exists(fi.DirectoryName)) Directory.CreateDirectory(fi.DirectoryName);
+                if (!Directory.Exists(fi.DirectoryName)) result = Directory.CreateDirectory(fi.DirectoryName);
             }
             else
             {
-                if (!Directory.Exists(fileOrFolderPath)) Directory.CreateDirectory(fileOrFolderPath);
+                if (!Directory.Exists(fileOrFolderPath)) result = Directory.CreateDirectory(fileOrFolderPath);
             }
+            return result;
         }
 
         public static string ReadFromFile(string filePath)
@@ -37,6 +39,7 @@ namespace Maximis.Toolkit.IO
         {
             if (string.IsNullOrEmpty(filePath)) return;
             EnsureDirectoryExists(filePath, PathType.File);
+            if (File.Exists(filePath)) File.Delete(filePath);
             File.WriteAllText(filePath, content);
         }
     }

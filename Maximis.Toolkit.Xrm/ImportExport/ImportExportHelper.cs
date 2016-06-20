@@ -1,5 +1,4 @@
-﻿using Microsoft.Xrm.Sdk;
-using Microsoft.Xrm.Sdk.Metadata;
+﻿using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,23 +7,23 @@ namespace Maximis.Toolkit.Xrm.ImportExport
 {
     internal static class ImportExportHelper
     {
-        internal static string[] GetAllQueryAttributes(IOrganizationService orgService, QueryExpression query, MetadataCache metaCache)
+        internal static string[] GetAllQueryAttributes(CrmContext context, QueryExpression query)
         {
             List<string> attributes = new List<string>();
-            attributes.AddRange(GetAllAttributesFromColumnSet(orgService, metaCache, query.EntityName, query.ColumnSet));
+            attributes.AddRange(GetAllAttributesFromColumnSet(context, query.EntityName, query.ColumnSet));
             foreach (LinkEntity le in query.LinkEntities)
             {
-                attributes.AddRange(GetAllAttributesFromColumnSet(orgService, metaCache, le.LinkToEntityName, le.Columns, le.EntityAlias));
+                attributes.AddRange(GetAllAttributesFromColumnSet(context, le.LinkToEntityName, le.Columns, le.EntityAlias));
             }
             return attributes.ToArray();
         }
 
-        private static IEnumerable<string> GetAllAttributesFromColumnSet(IOrganizationService orgService, MetadataCache metaCache, string entityType, ColumnSet columnSet, string alias = null)
+        private static IEnumerable<string> GetAllAttributesFromColumnSet(CrmContext context, string entityType, ColumnSet columnSet, string alias = null)
         {
             if (columnSet.AllColumns)
             {
                 List<string> attributes = new List<string>();
-                EntityMetadata meta = metaCache.GetEntityMetadata(orgService, entityType);
+                EntityMetadata meta = MetadataHelper.GetEntityMetadata(context, entityType);
                 if (!string.IsNullOrEmpty(meta.PrimaryIdAttribute)) attributes.Add(GetFullAttributeName(meta.PrimaryIdAttribute, alias));
                 if (!string.IsNullOrEmpty(meta.PrimaryNameAttribute)) attributes.Add(GetFullAttributeName(meta.PrimaryNameAttribute, alias));
                 attributes.AddRange(meta.Attributes.Select(q => GetFullAttributeName(q.LogicalName, alias)).OrderBy(q => q).Except(attributes));

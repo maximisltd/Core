@@ -12,7 +12,7 @@ namespace Maximis.Toolkit.Xrm
         /// <summary>
         /// Calls the Create or Update method of IOrganizationService as required
         /// </summary>
-        public static Entity CreateOrUpdate(IOrganizationService orgService, Entity entity, bool checkForDuplicatesOnCreate = false)
+        public static Entity CreateOrUpdate(IOrganizationService orgService, Entity entity, bool forceCreate = false, bool checkForDuplicatesOnCreate = false)
         {
             // If State/Status are included in the entity, extract them and deal with them separately
             bool updateStatus = false;
@@ -28,7 +28,7 @@ namespace Maximis.Toolkit.Xrm
             }
 
             // Create or Update the Entity
-            if (entity.Id == Guid.Empty)
+            if (forceCreate || entity.Id == Guid.Empty)
             {
                 if (checkForDuplicatesOnCreate && DuplicateDetectionHelper.CountDuplicates(orgService, entity) > 0)
                 {
@@ -163,30 +163,10 @@ namespace Maximis.Toolkit.Xrm
         /// </summary>
         public static void RelateEntitiesLazy(IOrganizationService orgService, EntityReference relateFrom, EntityReference relateTo)
         {
-            EntityMetadata entityMeta = MetadataHelper.GetEntityMetadata(orgService, relateFrom.LogicalName, EntityFilters.Relationships);
-            foreach (OneToManyRelationshipMetadata relMeta in entityMeta.OneToManyRelationships)
+            RelationshipMetadataBase relationship = MetadataHelper.GetAllRelationships(orgService, relateFrom.LogicalName, relateTo.LogicalName).FirstOrDefault();
+            if (relationship != null)
             {
-                if (relMeta.ReferencingEntity == relateTo.LogicalName || relMeta.ReferencedEntity == relateTo.LogicalName)
-                {
-                    RelateEntities(orgService, relMeta.SchemaName, relateFrom, relateTo);
-                    return;
-                }
-            }
-            foreach (OneToManyRelationshipMetadata relMeta in entityMeta.ManyToOneRelationships)
-            {
-                if (relMeta.ReferencingEntity == relateTo.LogicalName || relMeta.ReferencedEntity == relateTo.LogicalName)
-                {
-                    RelateEntities(orgService, relMeta.SchemaName, relateFrom, relateTo);
-                    return;
-                }
-            }
-            foreach (ManyToManyRelationshipMetadata relMeta in entityMeta.ManyToManyRelationships)
-            {
-                if (relMeta.Entity1LogicalName == relateTo.LogicalName || relMeta.Entity2LogicalName == relateTo.LogicalName)
-                {
-                    RelateEntities(orgService, relMeta.SchemaName, relateFrom, relateTo);
-                    return;
-                }
+                RelateEntities(orgService, relationship.SchemaName, relateFrom, relateTo);
             }
         }
 
@@ -221,7 +201,7 @@ namespace Maximis.Toolkit.Xrm
                 // Create new record
                 if (update.Attributes.Count > 0)
                 {
-                    orgService.Create(update);
+                    UpdateHelper.CreateOrUpdate(orgService, update, true);
                 }
             }
             else

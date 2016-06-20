@@ -16,6 +16,7 @@
     <SccAuxPath>SAK</SccAuxPath>
     <SccProvider>SAK</SccProvider>
     <TargetFrameworkProfile />
+    <SolutionDir Condition="$(SolutionDir) == '' Or $(SolutionDir) == '*Undefined*'">..\..\..\Clients\Brookson\Scratchpad\</SolutionDir>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -45,7 +46,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Microsoft.Crm.Sdk.Proxy, Version=7.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\Microsoft.CrmSdk.CoreAssemblies.7.0.1\lib\net45\Microsoft.Crm.Sdk.Proxy.dll</HintPath>
+      <HintPath>..\..\..\packages\Microsoft.CrmSdk.CoreAssemblies.7.1.1\lib\net45\Microsoft.Crm.Sdk.Proxy.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Microsoft.IdentityModel, Version=3.5.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
@@ -54,23 +55,36 @@
     </Reference>
     <Reference Include="Microsoft.VisualBasic" />
     <Reference Include="Microsoft.Xrm.Sdk, Version=7.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\Microsoft.CrmSdk.CoreAssemblies.7.0.1\lib\net45\Microsoft.Xrm.Sdk.dll</HintPath>
+      <HintPath>..\..\..\packages\Microsoft.CrmSdk.CoreAssemblies.7.1.1\lib\net45\Microsoft.Xrm.Sdk.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Microsoft.Xrm.Sdk.Deployment, Version=7.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\Microsoft.CrmSdk.Deployment.7.0.1\lib\net45\Microsoft.Xrm.Sdk.Deployment.dll</HintPath>
+      <HintPath>..\..\..\packages\Microsoft.CrmSdk.Deployment.7.1.1\lib\net45\Microsoft.Xrm.Sdk.Deployment.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Microsoft.Xrm.Sdk.Workflow, Version=7.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\Microsoft.CrmSdk.Workflow.7.0.1\lib\net45\Microsoft.Xrm.Sdk.Workflow.dll</HintPath>
+      <HintPath>..\..\..\packages\Microsoft.CrmSdk.Workflow.7.1.1\lib\net45\Microsoft.Xrm.Sdk.Workflow.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <Reference Include="PresentationFramework" />
     <Reference Include="System" />
     <Reference Include="System.Activities" />
+    <Reference Include="System.Activities.Presentation" />
     <Reference Include="System.Core" />
+    <Reference Include="System.DirectoryServices" />
+    <Reference Include="System.DirectoryServices.AccountManagement" />
+    <Reference Include="System.IdentityModel" />
     <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Security" />
     <Reference Include="System.ServiceModel" />
+    <Reference Include="System.ServiceModel.Web" />
+    <Reference Include="System.Web" />
+    <Reference Include="System.Web.Services" />
+    <Reference Include="System.Workflow.Activities" />
+    <Reference Include="System.Workflow.ComponentModel" />
+    <Reference Include="System.Workflow.Runtime" />
     <Reference Include="System.XML" />
+    <Reference Include="System.Xml.Linq" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Activities\ActivityHelper.cs" />
@@ -78,8 +92,9 @@
     <Compile Include="Annotations\AnnotationAttachment.cs" />
     <Compile Include="Annotations\AnnotationHelper.cs" />
     <Compile Include="AuditHelper.cs" />
-    <Compile Include="BaseAutoNamePlugin.cs" />
     <Compile Include="BaseCustomWorkflowActivity.cs" />
+    <Compile Include="BusinessClosureHelper.cs" />
+    <Compile Include="CrmContext.cs" />
     <Compile Include="DisplayStringOptions.cs" />
     <Compile Include="EntitySerialisation\DeserialisationOptions.cs" />
     <Compile Include="EntitySerialisation\Dictionary.cs" />
@@ -108,20 +123,21 @@
     <Compile Include="EntitySerialisation\EntitySerialiserScope.cs" />
     <Compile Include="EntitySerialisation\EntitySerialiser.cs" />
     <Compile Include="FetchXmlHelper.cs" />
-    <Compile Include="CrmContext.cs" />
+    <Compile Include="CrmConnectionInfo.cs" />
     <Compile Include="BulkOperationHelper.cs" />
-    <Compile Include="MetadataCache.cs" />
+    <Compile Include="PluginContext.cs" />
     <Compile Include="ServiceHelper.cs" />
+    <Compile Include="TracingService.cs" />
     <Compile Include="UpdateHelper.cs" />
     <Compile Include="WorkflowHelper.cs" />
     <Compile Include="ExtensionMethods.cs" />
     <Compile Include="MetadataHelper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="QueryHelper.cs" />
-    <Compile Include="ScheduledTasks\BaseScheduledTaskCreateUpdate.cs" />
-    <Compile Include="ScheduledTasks\BaseScheduledTaskDelete.cs" />
+    <Compile Include="WorkflowStepContext.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="app.config" />
     <None Include="maximis.snk" />
     <None Include="Maximis.Toolkit.Xrm.nuspec" />
     <None Include="packages.config" />

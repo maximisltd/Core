@@ -1,7 +1,6 @@
 ﻿using Maximis.Toolkit.IO;
 using Maximis.Toolkit.Xrm.EntitySerialisation;
 using Microsoft.Xrm.Sdk;
-using Microsoft.Xrm.Sdk.Query;
 using System.Diagnostics;
 using System.IO;
 using System.Xml;
@@ -12,19 +11,19 @@ namespace Maximis.Toolkit.Xrm.ImportExport
     {
         #region Export
 
-        public static void Export(IOrganizationService orgService, XmlTextWriter output, ExportOptions options)
+        public static void Export(CrmContext context, XmlTextWriter output, ExportOptions options)
         {
             // Get Entity Serialiser
-            EntitySerialiser ser = GetEntitySerialiser(orgService, options.QueryExpression);
+            EntitySerialiser ser = GetEntitySerialiser(context, options);
 
             // Serialise to XML file
             output.WriteStartElement("allentities");
             EntityCollection results = null;
-            while (QueryHelper.RetrieveEntitiesWithPaging(orgService, options.QueryExpression, ref results, options.RecordsPerPage))
+            while (QueryHelper.RetrieveEntitiesWithPaging(context.OrganizationService, options.QueryExpression, ref results, options.RecordsPerPage))
             {
                 foreach (Entity entity in results.Entities)
                 {
-                    output.WriteRaw(ser.SerialiseEntity(orgService, entity));
+                    output.WriteRaw(ser.SerialiseEntity(entity));
                 }
             }
 
@@ -33,15 +32,15 @@ namespace Maximis.Toolkit.Xrm.ImportExport
             output.Flush();
         }
 
-        public static void ExportMultipleFiles(IOrganizationService orgService, string folderPath, ExportOptions options)
+        public static void ExportMultipleFiles(CrmContext context, string folderPath, ExportOptions options)
         {
             FileHelper.EnsureDirectoryExists(folderPath, PathType.Directory);
 
-            EntitySerialiser ser = GetEntitySerialiser(orgService, options.QueryExpression);
+            EntitySerialiser ser = GetEntitySerialiser(context, options);
 
             EntityCollection results = null;
             int index = 0;
-            while (QueryHelper.RetrieveEntitiesWithPaging(orgService, options.QueryExpression, ref results, options.RecordsPerPage))
+            while (QueryHelper.RetrieveEntitiesWithPaging(context.OrganizationService, options.QueryExpression, ref results, options.RecordsPerPage))
             {
                 foreach (Entity entity in results.Entities)
                 {
@@ -51,47 +50,53 @@ namespace Maximis.Toolkit.Xrm.ImportExport
                     using (StreamWriter sw = new StreamWriter(filePath))
                     using (XmlTextWriter xtw = new XmlTextWriter(sw))
                     {
-                        xtw.WriteRaw(ser.SerialiseEntity(orgService, entity));
+                        xtw.WriteRaw(ser.SerialiseEntity(entity));
                     }
                 }
             }
         }
 
-        public static void ExportSingleFile(IOrganizationService orgService, string filePath, ExportOptions options)
+        public static void ExportSingleFile(CrmContext context, string filePath, ExportOptions options)
         {
             FileHelper.EnsureDirectoryExists(filePath, PathType.File);
             using (StreamWriter sw = new StreamWriter(filePath))
             using (XmlTextWriter xtw = new XmlTextWriter(sw))
             {
-                Export(orgService, xtw, options);
+                Export(context, xtw, options);
             }
         }
 
-        private static EntitySerialiser GetEntitySerialiser(IOrganizationService orgService, QueryExpression query)
+        private static EntitySerialiser GetEntitySerialiser(CrmContext context, ExportOptions options)
         {
-            MetadataCache metaCache = new MetadataCache();
-            EntitySerialiserScope scope = new EntitySerialiserScope { EntityType = query.EntityName, Columns = ImportExportHelper.GetAllQueryAttributes(orgService, query, metaCache) };
-            return new EntitySerialiser(metaCache, scope);
+            if (options.Scopes == null || options.Scopes.Count == 0)
+            {
+                EntitySerialiserScope scope = new EntitySerialiserScope { EntityType = options.QueryExpression.EntityName, Columns = ImportExportHelper.GetAllQueryAttributes(context, options.QueryExpression) };
+                return new EntitySerialiser(context, scope);
+            }
+            else
+            {
+                return new EntitySerialiser(context, options.Scopes);
+            }
         }
 
         #endregion Export
 
         #region Import
 
-        public static void ImportMultipleFiles(IOrganizationService orgService, string folderPath, ImportOptions options)
+        public static void ImportMultipleFiles(CrmContext context, string folderPath, ImportOptions options)
         {
-            using (XmlImportManager xmlImport = new XmlImportManager(orgService, new MetadataCache(), options))
+            using (XmlImportManager xmlImport = new XmlImportManager(context, options))
             {
-                foreach (string fileName in Directory.EnumerateFiles(folderPath, "*.xml"))
+                foreach (string fileName in Directory.EnumerateFiles(folderPath, "*.xml", SearchOption.AllDirectories))
                 {
                     xmlImport.AddForImport(File.ReadAllText(fileName));
                 }
             }
         }
 
-        public static void ImportSingleFile(IOrganizationService orgService, XmlTextReader input, ImportOptions options)
+        public static void ImportSingleFile(CrmContext context, XmlTextReader input, ImportOptions options)
         {
-            using (XmlImportManager xmlImport = new XmlImportManager(orgService, new MetadataCache(), options))
+            using (XmlImportManager xmlImport = new XmlImportManager(context, options))
             {
                 while (input.Read())
                 {
@@ -103,11 +108,11 @@ namespace Maximis.Toolkit.Xrm.ImportExport
             }
         }
 
-        public static void ImportSingleFile(IOrganizationService orgService, string filePath, ImportOptions options)
+        public static void ImportSingleFile(CrmContext context, string filePath, ImportOptions options)
         {
             using (XmlTextReader xr = new XmlTextReader(File.OpenText(filePath)))
             {
-                ImportSingleFile(orgService, xr, options);
+                ImportSingleFile(context, xr, options);
             }
         }
 

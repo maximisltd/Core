@@ -1,4 +1,6 @@
-﻿using Microsoft.Xrm.Sdk.Query;
+﻿using Maximis.Toolkit.Xrm.EntitySerialisation;
+using Microsoft.Xrm.Sdk.Query;
+using System.Collections.Generic;
 
 namespace Maximis.Toolkit.Xrm.ImportExport
 {
@@ -9,5 +11,7 @@ namespace Maximis.Toolkit.Xrm.ImportExport
         public QueryExpression QueryExpression { get; set; }
 
         public int RecordsPerPage { get; set; }
+
+        public List<EntitySerialiserScope> Scopes { get; set; }
     }
 }

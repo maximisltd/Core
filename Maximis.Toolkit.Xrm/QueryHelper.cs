@@ -11,6 +11,8 @@ namespace Maximis.Toolkit.Xrm
 {
     public static class QueryHelper
     {
+        private static ColumnSet emptyColSet = new ColumnSet();
+
         /// <summary>
         /// Returns true if two Entity References are related via the given relationship
         /// </summary>
@@ -92,6 +94,68 @@ namespace Maximis.Toolkit.Xrm
             return (results.Entities != null && results.Entities.Count > 0);
         }
 
+        public static Entity RetrieveEntityByName(CrmContext context, string entityType, string primaryNameValue, ColumnSet colSet = null)
+        {
+            EntityMetadata meta = MetadataHelper.GetEntityMetadata(context, entityType);
+            QueryExpression query = new QueryExpression(entityType);
+            if (colSet != null) query.ColumnSet = colSet;
+            query.Criteria.AddCondition(meta.PrimaryNameAttribute, ConditionOperator.Equal, primaryNameValue);
+            return RetrieveSingleEntity(context.OrganizationService, query);
+        }
+
+        public static EntityCollection RetrieveManyToManyRelatedEntities(IOrganizationService orgService, EntityReference entityRef, ManyToManyRelationshipMetadata relManyMany, ColumnSet columns = null, OrderExpression order = null)
+        {
+            // Create Query
+            QueryExpression manyToManyQuery = new QueryExpression();
+            if (columns != null) manyToManyQuery.ColumnSet = columns;
+            if (order != null) manyToManyQuery.Orders.Add(order);
+
+            // Configure Query to return the "other type" of Entity from that of "entityRef"
+            if (entityRef.LogicalName == relManyMany.Entity1LogicalName)
+            {
+                manyToManyQuery.EntityName = relManyMany.Entity2LogicalName;
+                LinkEntity le = manyToManyQuery.AddLink(relManyMany.IntersectEntityName, relManyMany.Entity2IntersectAttribute, relManyMany.Entity2IntersectAttribute);
+                le.LinkCriteria.AddCondition(relManyMany.Entity1IntersectAttribute, ConditionOperator.Equal, entityRef.Id);
+            }
+            else
+            {
+                manyToManyQuery.EntityName = relManyMany.Entity1LogicalName;
+                LinkEntity le = manyToManyQuery.AddLink(relManyMany.IntersectEntityName, relManyMany.Entity1IntersectAttribute, relManyMany.Entity1IntersectAttribute);
+                le.LinkCriteria.AddCondition(relManyMany.Entity2IntersectAttribute, ConditionOperator.Equal, entityRef.Id);
+            }
+
+            // Return results of query
+            return orgService.RetrieveMultiple(manyToManyQuery);
+        }
+
+        public static EntityCollection RetrieveOneToManyReferencedEntities(IOrganizationService orgService, EntityReference entityRef, OneToManyRelationshipMetadata relOneMany, ColumnSet columns = null, OrderExpression order = null)
+        {
+            if (columns == null) columns = emptyColSet;
+
+            RetrieveRequest req = new RetrieveRequest
+            {
+                Target = entityRef,
+                ColumnSet = emptyColSet,
+                RelatedEntitiesQuery = new RelationshipQueryCollection()
+            };
+            QueryExpression relatedQuery = new QueryExpression(relOneMany.ReferencedEntity);
+            if (columns != null) relatedQuery.ColumnSet = columns;
+            if (order != null) relatedQuery.Orders.Add(order);
+            req.RelatedEntitiesQuery.Add(new Relationship(relOneMany.SchemaName) { PrimaryEntityRole = EntityRole.Referencing }, relatedQuery);
+            RelatedEntityCollection result = ((RetrieveResponse)orgService.Execute(req)).Entity.RelatedEntities;
+            return (result == null || result.Count == 0) ? null : result.First().Value;
+        }
+
+        public static EntityCollection RetrieveOneToManyReferencingEntities(IOrganizationService orgService, EntityReference entityRef, OneToManyRelationshipMetadata relOneMany, ColumnSet columns = null, OrderExpression order = null)
+        {
+            if (columns == null) columns = emptyColSet;
+            QueryExpression referencingQuery = new QueryExpression(relOneMany.ReferencingEntity);
+            if (columns != null) referencingQuery.ColumnSet = columns;
+            if (order != null) referencingQuery.Orders.Add(order);
+            referencingQuery.Criteria.AddCondition(relOneMany.ReferencingAttribute, ConditionOperator.Equal, entityRef.Id);
+            return orgService.RetrieveMultiple(referencingQuery);
+        }
+
         /// <summary>
         /// Looks for an entity that matches the Query. Creates a new one if not found.
         /// </summary>
@@ -106,24 +170,13 @@ namespace Maximis.Toolkit.Xrm
         }
 
         /// <summary>
-        /// Returns all records of type "referencingEntityType" which have a lookup field
-        /// ("lookupFieldName") set to referencedEntityId.
-        /// </summary>
-        public static EntityCollection RetrieveRelatedEntities(IOrganizationService orgService,
-            string referencingEntityType, string lookupFieldName, Guid referencedEntityId, ColumnSet cols = null)
-        {
-            QueryExpression query = new QueryExpression(referencingEntityType) { ColumnSet = cols };
-            query.Criteria.AddCondition(lookupFieldName, ConditionOperator.Equal, referencedEntityId);
-            return orgService.RetrieveMultiple(query);
-        }
-
-        /// <summary>
         /// Returns all records related to "entityReference" by the relationship defined in
         /// "relationshipMetadata". Use MetadataHelper.GetRelationshipMetadata to get "relationshipMetadata".
         /// </summary>
-        public static EntityCollection RetrieveRelatedEntities(IOrganizationService orgService,
-            EntityReference entityReference, RelationshipMetadataBase relationshipMetadata, ColumnSet cols = null, params OrderExpression[] orders)
+        public static EntityCollection RetrieveRelatedEntities(IOrganizationService orgService, EntityReference entityRef, RelationshipMetadataBase relationshipMetadata, ColumnSet columns = null, OrderExpression orders = null)
         {
+            if (columns == null) columns = emptyColSet;
+
             // Determine type (1:N or N:N)
             switch (relationshipMetadata.RelationshipType)
             {
@@ -138,75 +191,30 @@ namespace Maximis.Toolkit.Xrm
 
                     // Operation differs depending on whether we have been passed the REFERENCED
                     // (One) or REFERENCING (Many) entity
-                    if (entityReference.LogicalName == relOneMany.ReferencedEntity)
+                    if (entityRef.LogicalName == relOneMany.ReferencedEntity)
                     {
-                        // If "entityReference" is the Referenced Entity, return all Referencing
+                        // If "entity" is the Referenced Entity, return all Referencing
                         // Entities which have a Lookup set to "entityReference"
-                        return RetrieveRelatedEntities(orgService, relOneMany.ReferencingEntity, relOneMany.ReferencingAttribute,
-                            entityReference.Id, cols);
+                        return RetrieveOneToManyReferencingEntities(orgService, entityRef, relOneMany, columns);
                     }
                     else
                     {
-                        // If "entityReference" is the Referencing Entity, return all Referenced entities
-                        RetrieveRequest req = new RetrieveRequest
-                        {
-                            Target = entityReference,
-                            ColumnSet = new ColumnSet(),
-                            RelatedEntitiesQuery = new RelationshipQueryCollection()
-                        };
-
-                        QueryExpression relatedQuery = new QueryExpression(relOneMany.ReferencedEntity) { ColumnSet = cols };
-                        if (orders != null && orders.Length > 0) relatedQuery.Orders.AddRange(orders);
-                        req.RelatedEntitiesQuery.Add(new Relationship(relOneMany.SchemaName), relatedQuery);
-                        RelatedEntityCollection result = ((RetrieveResponse)orgService.Execute(req)).Entity.RelatedEntities;
-                        return (result == null || result.Count == 0) ? null : result.First().Value;
+                        // If "entity" is the Referencing Entity, return all Referenced entities
+                        return RetrieveOneToManyReferencedEntities(orgService, entityRef, relOneMany, columns);
                     }
 
                 // Many to Many
                 case RelationshipType.ManyToManyRelationship:
 
                     // Many to Many relationships are really 2x One to Many with an "Intersect
-                    // Entity" in between: A -< X >- B If "entityReference" is an A, we want to
-                    // return all B's related to all X's related to A. If "entityReference" is a B,
+                    // Entity" in between: A -< X >- B. If "entity" is an A, we want to
+                    // return all B's related to all X's related to A. If "entity" is a B,
                     // we want to return all A's related to all X's related to B.
 
                     // Cast Metadata
                     ManyToManyRelationshipMetadata relManyMany = relationshipMetadata as ManyToManyRelationshipMetadata;
 
-                    // Create Query
-                    QueryExpression query = new QueryExpression() { ColumnSet = cols };
-                    if (orders != null && orders.Length > 0) query.Orders.AddRange(orders);
-
-                    // Configure Query to return the "other type" of Entity from that of "entityReference"
-                    if (entityReference.LogicalName == relManyMany.Entity1LogicalName)
-                    {
-                        query.EntityName = relManyMany.Entity2LogicalName;
-                        LinkEntity linkEntity = new LinkEntity
-                        {
-                            LinkFromEntityName = relManyMany.Entity2LogicalName,
-                            LinkFromAttributeName = relManyMany.Entity2IntersectAttribute,
-                            LinkToEntityName = relManyMany.IntersectEntityName,
-                            LinkToAttributeName = relManyMany.Entity2IntersectAttribute,
-                        };
-                        linkEntity.LinkCriteria.AddCondition(relManyMany.Entity1IntersectAttribute, ConditionOperator.Equal, entityReference.Id);
-                        query.LinkEntities.Add(linkEntity);
-                    }
-                    else
-                    {
-                        query.EntityName = relManyMany.Entity1LogicalName;
-                        LinkEntity linkEntity = new LinkEntity
-                        {
-                            LinkFromEntityName = relManyMany.Entity1LogicalName,
-                            LinkFromAttributeName = relManyMany.Entity1IntersectAttribute,
-                            LinkToEntityName = relManyMany.IntersectEntityName,
-                            LinkToAttributeName = relManyMany.Entity1IntersectAttribute,
-                        };
-                        linkEntity.LinkCriteria.AddCondition(relManyMany.Entity2IntersectAttribute, ConditionOperator.Equal, entityReference.Id);
-                        query.LinkEntities.Add(linkEntity);
-                    }
-
-                    // Return results of query
-                    return orgService.RetrieveMultiple(query);
+                    return RetrieveManyToManyRelatedEntities(orgService, entityRef, relManyMany, columns);
             }
             return null;
         }

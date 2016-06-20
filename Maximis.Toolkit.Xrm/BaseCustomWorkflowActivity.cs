@@ -1,28 +1,36 @@
-﻿using Microsoft.Xrm.Sdk;
+﻿using Microsoft.Xrm.Sdk.Query;
 using Microsoft.Xrm.Sdk.Workflow;
+using System;
 using System.Activities;
+using System.Collections.Generic;
 
 namespace Maximis.Toolkit.Xrm
 {
     public abstract class BaseCustomWorkflowActivity : CodeActivity
     {
-        protected override void Execute(CodeActivityContext executionContext)
+        protected static readonly ColumnSet asyncOpCols = new ColumnSet("message", "friendlymessage");
+        protected static readonly Guid dummyGuid = Guid.NewGuid();
+
+        public abstract void ExecuteWorkflowStep(WorkflowStepContext context);
+
+        /// <summary>
+        /// Returns a collection of ancestor IWorkflowContexts.
+        /// </summary>
+        public List<IWorkflowContext> GetAncestorContexts(WorkflowStepContext context)
         {
-            // Get the Workflow Context
-            IWorkflowContext workflowContext = executionContext.GetExtension<IWorkflowContext>();
-
-            // Get the Organization Service
-            IOrganizationServiceFactory serviceFactory = executionContext.GetExtension<IOrganizationServiceFactory>();
-            IOrganizationService service = serviceFactory.CreateOrganizationService(workflowContext.UserId);
-
-            // Get the Tracing Service
-            ITracingService tracingService = executionContext.GetExtension<ITracingService>();
-
-            // Call ExecuteWorkflowStep method
-            ExecuteWorkflowStep(workflowContext, service, tracingService, executionContext);
+            List<IWorkflowContext> result = new List<IWorkflowContext>();
+            IWorkflowContext ancestor = context.WorkflowContext.ParentContext;
+            while (ancestor != null) { result.Add(ancestor); ancestor = ancestor.ParentContext; }
+            return result;
         }
 
-        protected abstract void ExecuteWorkflowStep(IWorkflowContext workflowContext, IOrganizationService orgService,
-            ITracingService tracingService, CodeActivityContext executionContext);
+        protected override void Execute(CodeActivityContext activityContext)
+        {
+            // Create Plugin Context
+            WorkflowStepContext context = new WorkflowStepContext(activityContext, this.GetType());
+
+            // Call ExecuteWorkflowStep method
+            ExecuteWorkflowStep(context);
+        }
     }
 }

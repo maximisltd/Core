@@ -52,9 +52,9 @@ namespace Maximis.Toolkit.Xrm
 
         /// <summary>
         /// Retrieves a workflow by name and then runs it
+        /// <returns>AsyncOperationId</returns>
         /// </summary>
-        public static ExecuteWorkflowResponse RunWorkflow(IOrganizationService orgService,
-            EntityReference entityReference, string workflowName)
+        public static Guid RunWorkflow(IOrganizationService orgService, EntityReference entityReference, string workflowName)
         {
             Guid workflowId = GetWorkflowId(orgService, entityReference.LogicalName, workflowName);
             return RunWorkflow(orgService, entityReference, workflowId);
@@ -62,16 +62,11 @@ namespace Maximis.Toolkit.Xrm
 
         /// <summary>
         /// Triggers a Workflow against an Entity
+        /// <returns>AsyncOperationId</returns>
         /// </summary>
-        public static ExecuteWorkflowResponse RunWorkflow(IOrganizationService orgService,
-            EntityReference entityReference, Guid workflowId)
+        public static Guid RunWorkflow(IOrganizationService orgService, EntityReference entityReference, Guid workflowId)
         {
-            ExecuteWorkflowRequest wfExecute = new ExecuteWorkflowRequest
-            {
-                WorkflowId = workflowId,
-                EntityId = entityReference.Id
-            };
-            return (ExecuteWorkflowResponse)orgService.Execute(wfExecute);
+            return ((ExecuteWorkflowResponse)orgService.Execute(new ExecuteWorkflowRequest { WorkflowId = workflowId, EntityId = entityReference.Id })).Id;
         }
     }
 }

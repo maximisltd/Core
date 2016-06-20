@@ -71,7 +71,7 @@ namespace Maximis.Toolkit.Xrm
             }
         }
 
-        public static DeploymentServiceClient GetDeploymentServiceClient(CrmContext crmContext)
+        public static DeploymentServiceClient GetDeploymentServiceClient(CrmConnectionInfo crmContext)
         {
             string serviceUrl = BuildUrl(crmContext, ServiceType.Deployment);
             DeploymentServiceClient client = ProxyClientHelper.CreateClient(new Uri(serviceUrl));
@@ -80,7 +80,7 @@ namespace Maximis.Toolkit.Xrm
             return client;
         }
 
-        public static OrganizationServiceProxy GetOrganizationServiceProxy(CrmContext crmConfiguration)
+        public static OrganizationServiceProxy GetOrganizationServiceProxy(CrmConnectionInfo crmConfiguration)
         {
             ClientCredentials credentials = new ClientCredentials();
 
@@ -117,7 +117,7 @@ namespace Maximis.Toolkit.Xrm
             }
         }
 
-        private static string BuildUrl(CrmContext crmContext, ServiceType serviceType)
+        private static string BuildUrl(CrmConnectionInfo crmContext, ServiceType serviceType)
         {
             StringBuilder sb = new StringBuilder();
             sb.Append(crmContext.Secure ? "https://" : "http://");

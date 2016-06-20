@@ -14,19 +14,19 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
     {
         private static EntitySerialiserScope activityPartyScope = new EntitySerialiserScope { EntityType = "activityparty", Columns = new string[] { "partyid", "participationtypemask", "addressused", "ispartydeleted", "resourcespecid" } };
         private readonly List<Guid> processedRecords = new List<Guid>();
+        private CrmContext context;
         private DisplayStringOptions formats = new DisplayStringOptions { BoolFalse = "false", BoolTrue = "true", DateFormat = "yyyy-MM-ddTHH:mm:ss.fff" };
-        private MetadataCache metaCache;
         private Dictionary<string, RelationshipMetadataBase> relationshipMetadata = new Dictionary<string, RelationshipMetadataBase>();
 
-        public EntitySerialiser(MetadataCache metaCache, List<EntitySerialiserScope> scopes)
+        public EntitySerialiser(CrmContext context, List<EntitySerialiserScope> scopes)
         {
-            this.metaCache = metaCache;
+            this.context = context;
             this.Scopes = scopes;
         }
 
-        public EntitySerialiser(MetadataCache metaCache, EntitySerialiserScope scope)
+        public EntitySerialiser(CrmContext context, EntitySerialiserScope scope)
         {
-            this.metaCache = metaCache;
+            this.context = context;
             this.Scopes = new List<EntitySerialiserScope>();
             this.Scopes.Add(scope);
         }
@@ -40,28 +40,28 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
             processedRecords.Clear();
         }
 
-        public string SerialiseEntity(IOrganizationService orgService, EntityReference toSerialise)
+        public string SerialiseEntity(EntityReference toSerialise)
         {
             EntitySerialiserScope scope = GetScope(toSerialise);
-            return (scope == null) ? null : SerialiseEntityWorker(orgService, orgService.Retrieve(toSerialise.LogicalName, toSerialise.Id, new ColumnSet(scope.Columns)), scope);
+            return (scope == null) ? null : SerialiseEntityWorker(context.OrganizationService.Retrieve(toSerialise.LogicalName, toSerialise.Id, new ColumnSet(scope.Columns)), scope);
         }
 
-        public string SerialiseEntity(IOrganizationService orgService, Entity toSerialise)
+        public string SerialiseEntity(Entity toSerialise)
         {
             EntitySerialiserScope scope = GetScope(toSerialise.ToEntityReference());
-            return (scope == null) ? null : SerialiseEntityWorker(orgService, toSerialise, scope);
+            return (scope == null) ? null : SerialiseEntityWorker(toSerialise, scope);
         }
 
-        public void SerialiseEntity(IOrganizationService orgService, EntityReference toSerialise, XmlTextWriter xtw)
+        public void SerialiseEntity(EntityReference toSerialise, XmlTextWriter xtw)
         {
             EntitySerialiserScope scope = GetScope(toSerialise);
-            if (scope != null) SerialiseEntityWorker(orgService, orgService.Retrieve(toSerialise.LogicalName, toSerialise.Id, new ColumnSet(scope.Columns)), scope, xtw);
+            if (scope != null) SerialiseEntityWorker(context.OrganizationService.Retrieve(toSerialise.LogicalName, toSerialise.Id, new ColumnSet(scope.Columns)), scope, xtw, false);
         }
 
-        public void SerialiseEntity(IOrganizationService orgService, Entity toSerialise, XmlTextWriter xtw)
+        public void SerialiseEntity(Entity toSerialise, XmlTextWriter xtw)
         {
             EntitySerialiserScope scope = GetScope(toSerialise.ToEntityReference());
-            if (scope != null) SerialiseEntityWorker(orgService, toSerialise, scope, xtw);
+            if (scope != null) SerialiseEntityWorker(toSerialise, scope, xtw);
         }
 
         private string GetRelatedEntityType(string entityType, RelationshipMetadataBase relMeta)
@@ -83,33 +83,28 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
         private EntitySerialiserScope GetScope(EntityReference toSerialise)
         {
             if (toSerialise == null) return null;
-
-            if (processedRecords.Contains(toSerialise.Id)) return null;
-
             EntitySerialiserScope scope = Scopes.SingleOrDefault(q => q.EntityType == toSerialise.LogicalName);
-            if (scope == null) return null;
-
             return scope;
         }
 
-        private string SerialiseEntityWorker(IOrganizationService orgService, Entity toSerialise, EntitySerialiserScope scope)
+        private string SerialiseEntityWorker(Entity toSerialise, EntitySerialiserScope scope)
         {
             StringBuilder result = new StringBuilder();
 
             using (StringWriter sw = new StringWriter(result))
             using (XmlTextWriter xtw = new XmlTextWriter(sw))
             {
-                SerialiseEntityWorker(orgService, toSerialise, scope, xtw);
+                SerialiseEntityWorker(toSerialise, scope, xtw);
             }
 
             return result.ToString();
         }
 
-        private void SerialiseEntityWorker(IOrganizationService orgService, Entity toSerialise, EntitySerialiserScope scope, XmlTextWriter xtw)
+        private void SerialiseEntityWorker(Entity toSerialise, EntitySerialiserScope scope, XmlTextWriter xtw, bool restrictToScope = false, bool followRelationships = true)
         {
-            processedRecords.Add(toSerialise.Id);
+            if (!processedRecords.Contains(toSerialise.Id)) processedRecords.Add(toSerialise.Id);
 
-            EntityMetadata toSerialiseMetadata = metaCache.GetEntityMetadata(orgService, toSerialise.LogicalName);
+            EntityMetadata toSerialiseMetadata = MetadataHelper.GetEntityMetadata(context, toSerialise.LogicalName);
 
             xtw.WriteStartElement("ent");
             xtw.WriteAttributeString("id", toSerialise.Id.ToString("N"));
@@ -148,19 +143,19 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
 
                                 // If scope not found, or we have already serialised this entity, use a
                                 // scope which includes only the Primary name
-                                if (processedRecords.Contains(lookupRef.Id) || childScope == null)
+                                if (restrictToScope || processedRecords.Contains(lookupRef.Id) || childScope == null)
                                 {
                                     childScope = new EntitySerialiserScope { EntityType = lookupRef.LogicalName };
-                                    EntityMetadata lookupRefMetadata = metaCache.GetEntityMetadata(orgService, lookupRef.LogicalName);
+                                    EntityMetadata lookupRefMetadata = MetadataHelper.GetEntityMetadata(context, lookupRef.LogicalName);
                                     if (!string.IsNullOrEmpty(lookupRefMetadata.PrimaryNameAttribute)) childScope.Columns = new[] { lookupRefMetadata.PrimaryNameAttribute };
                                 }
 
                                 // Serialise lookup Entity
                                 ColumnSet colSet = childScope.Columns == null ? new ColumnSet() : new ColumnSet(childScope.Columns);
-                                Entity referencedEntity = QueryHelper.TryRetrieve(orgService, lookupRef.LogicalName, lookupRef.Id, colSet);
+                                Entity referencedEntity = QueryHelper.TryRetrieve(context.OrganizationService, lookupRef.LogicalName, lookupRef.Id, colSet);
                                 if (referencedEntity != null)
                                 {
-                                    SerialiseEntityWorker(orgService, referencedEntity, childScope, xtw);
+                                    SerialiseEntityWorker(referencedEntity, childScope, xtw, restrictToScope);
                                 }
                             }
                             break;
@@ -170,7 +165,7 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
                             EntityCollection partyList = toSerialise.GetAttributeValue<EntityCollection>(column);
                             foreach (Entity activityParty in partyList.Entities)
                             {
-                                SerialiseEntityWorker(orgService, activityParty, activityPartyScope, xtw);
+                                SerialiseEntityWorker(activityParty, activityPartyScope, xtw, restrictToScope);
                             }
                             break;
 
@@ -186,41 +181,63 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
 
                     if (writeStringValue)
                     {
-                        xtw.WriteString(MetadataHelper.GetAttributeValueAsDisplayString(orgService, metaCache, toSerialise, attrMeta.LogicalName, this.Formats));
+                        xtw.WriteString(MetadataHelper.GetAttributeValueAsDisplayString(context, toSerialise, attrMeta.LogicalName, this.Formats));
                     }
 
                     xtw.WriteEndElement();
                 }
-            }
 
-            if (scope.Relationships != null)
-            {
-                bool relTagWritten = false;
-
-                foreach (string relationshipName in scope.Relationships)
+                if (!restrictToScope)
                 {
-                    if (!relationshipMetadata.ContainsKey(relationshipName))
+                    // Deal with other attributes that are returned in spite of not being in scope
+                    // This was written to cope with Calendar Rules but may be useful on other Entities
+                    foreach (string attribute in toSerialise.Attributes.Keys.Except(scope.Columns))
                     {
-                        relationshipMetadata.Add(relationshipName,
-                            MetadataHelper.GetRelationshipMetadata(orgService, relationshipName));
-                    }
-                    foreach (
-                        Entity relatedEntity in
-                            QueryHelper.RetrieveRelatedEntities(orgService, toSerialise.ToEntityReference(),
-                                relationshipMetadata[relationshipName]).Entities)
-                    {
-                        if (!processedRecords.Contains(relatedEntity.Id))
+                        EntityCollection embeddedEntities = toSerialise[attribute] as EntityCollection;
+                        if (embeddedEntities != null)
                         {
-                            if (!relTagWritten)
+                            xtw.WriteStartElement("attr");
+                            xtw.WriteAttributeString("ln", attribute);
+                            xtw.WriteAttributeString("type", "EntityCollection");
+                            foreach (Entity embeddedEntity in embeddedEntities.Entities)
                             {
-                                xtw.WriteStartElement("rel");
-                                relTagWritten = true;
+                                EntitySerialiserScope embeddedScope = GetScope(embeddedEntity.ToEntityReference());
+                                if (embeddedScope != null)
+                                {
+                                    SerialiseEntityWorker(embeddedEntity, embeddedScope, xtw, true);
+                                }
                             }
-                            SerialiseEntity(orgService, relatedEntity.ToEntityReference(), xtw);
+                            xtw.WriteEndElement();
                         }
                     }
                 }
-                if (relTagWritten) xtw.WriteEndElement();
+            }
+
+            if (scope.Relationships != null && followRelationships)
+            {
+                foreach (string relationshipName in scope.Relationships)
+                {
+                    xtw.WriteStartElement("rel");
+                    xtw.WriteAttributeString("name", relationshipName);
+
+                    if (!relationshipMetadata.ContainsKey(relationshipName))
+                    {
+                        relationshipMetadata.Add(relationshipName,
+                            MetadataHelper.GetRelationshipMetadata(context, scope.EntityType, relationshipName));
+                    }
+
+                    EntityCollection relatedEntities = QueryHelper.RetrieveRelatedEntities(context.OrganizationService, toSerialise.ToEntityReference(), relationshipMetadata[relationshipName]);
+                    foreach (Entity relatedEntity in relatedEntities.Entities)
+                    {
+                        EntitySerialiserScope relScope = GetScope(relatedEntity.ToEntityReference());
+                        if (relScope != null)
+                        {
+                            Entity relatedEntityFull = context.OrganizationService.Retrieve(relatedEntity.LogicalName, relatedEntity.Id, new ColumnSet(relScope.Columns));
+                            SerialiseEntityWorker(relatedEntityFull, relScope, xtw, false, false);
+                        }
+                    }
+                    xtw.WriteEndElement();
+                }
             }
             xtw.WriteEndElement();
         }

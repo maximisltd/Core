@@ -51,6 +51,7 @@ namespace Maximis.Toolkit.Office
             Worksheets = new Dictionary<string, NamespacedXmlDocument>();
             foreach (string key in worksheetNames.Keys)
             {
+                if (!worksheetContent.ContainsKey(key)) continue;
                 Worksheets.Add(worksheetNames[key], NamespacedXmlDocument.FromXmlString(worksheetContent[key]));
             }
         }

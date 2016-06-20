@@ -10,20 +10,28 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
 {
     public class EntityDeserialiser
     {
-        private List<EntityReference> lookupCache = new List<EntityReference>();
-        private MetadataCache metaCache;
+        private EntityReference defaultBURef;
 
-        public EntityDeserialiser()
+        private Dictionary<Guid, Guid> idMappings = new Dictionary<Guid, Guid>();
+
+        private List<EntityReference> knownExist = new List<EntityReference>();
+
+        private List<EntityReference> knownNonExist = new List<EntityReference>();
+
+        public EntityDeserialiser(CrmContext context)
         {
-            this.metaCache = new MetadataCache();
+            this.context = context;
         }
 
-        public EntityDeserialiser(MetadataCache metaCache)
-        {
-            this.metaCache = metaCache;
-        }
+        public CrmContext context { get; set; }
 
-        public Entity DeserialiseEntity(IOrganizationService orgService, string entityXml, DeserialisationOptions options = null)
+        /// <summary>
+        /// Used to specify substitute Record IDs for lookups.
+        /// If a referenced Entity cannot be found by Id, but a mapping exists between that Id and another, that will also be attempted.
+        /// </summary>
+        public Dictionary<Guid, Guid> IdMappings { get { return idMappings; } }
+
+        public Entity DeserialiseEntity(string entityXml, DeserialisationOptions options = null)
         {
             // Default options
             if (options == null) options = new DeserialisationOptions();
@@ -35,7 +43,7 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
 
             // Get Metadata for Entity Type
             string logicalName = xd.DocumentElement.GetAttribute("ln");
-            EntityMetadata entityMeta = metaCache.GetEntityMetadata(orgService, logicalName);
+            EntityMetadata entityMeta = MetadataHelper.GetEntityMetadata(context, logicalName);
             if (entityMeta == null) return null;
 
             // Create Entity
@@ -55,11 +63,22 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
 
                 if (attrMeta == null)
                 {
-                    if (options.IgnoreUnknownAttributes) continue;
+                    // Special Case code for Calendar Rules (and similar??)
+                    if (attrNode.GetAttribute("type") == "EntityCollection")
+                    {
+                        List<Entity> embeddedEntities = new List<Entity>();
+                        foreach (XmlElement embeddedEntityNode in attrNode.SelectNodes("ent"))
+                        {
+                            embeddedEntities.Add(DeserialiseEntity( embeddedEntityNode.OuterXml, options));
+                        }
+                        result[attrName] = new EntityCollection(embeddedEntities);
+                        continue;
+                    }
+                    else if (options.IgnoreUnknownAttributes) continue;
                     else throw new Exception(string.Format("Unknown Attribute: '{0}'", attrName));
                 }
 
-                if (string.IsNullOrEmpty(attrNode.InnerText))
+                if (string.IsNullOrEmpty(attrNode.InnerXml))
                 {
                     if (options.SetToNullIfEmpty != null && options.SetToNullIfEmpty.Contains(attrMeta.LogicalName))
                     {
@@ -91,7 +110,7 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
                     case AttributeTypeCode.Lookup:
                     case AttributeTypeCode.Owner:
                     case AttributeTypeCode.Customer:
-                        EntityReference entityRef = GetEntityReference(orgService, attrNode, (LookupAttributeMetadata)attrMeta);
+                        EntityReference entityRef = GetEntityReference(context, attrNode, (LookupAttributeMetadata)attrMeta);
                         if (entityRef != null) result[attrMeta.LogicalName] = entityRef;
                         break;
 
@@ -105,6 +124,10 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
 
                     case AttributeTypeCode.Decimal:
                         result[attrMeta.LogicalName] = attrNode.InnerText.ToDecimal();
+                        break;
+
+                    case AttributeTypeCode.Double:
+                        result[attrMeta.LogicalName] = attrNode.InnerText.ToDouble();
                         break;
 
                     case AttributeTypeCode.Money:
@@ -135,7 +158,7 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
                         EntityCollection partyList = new EntityCollection();
                         foreach (XmlNode partyNode in attrNode.SelectNodes("ent"))
                         {
-                            partyList.Entities.Add(DeserialiseEntity(orgService, partyNode.OuterXml, options));
+                            partyList.Entities.Add(DeserialiseEntity( partyNode.OuterXml, options));
                         }
                         result[attrMeta.LogicalName] = partyList;
                         break;
@@ -148,55 +171,87 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
                 }
             }
 
+            // Ensure Business Owned Entities have a Business Unit
+            if (entityMeta.OwnershipType == OwnershipTypes.BusinessOwned)
+            {
+                string buAttrName = entityMeta.Attributes.First(q => q.AttributeType == AttributeTypeCode.Lookup && ((LookupAttributeMetadata)q).Targets.Contains("businessunit")).LogicalName;
+                if (!result.Contains(buAttrName))
+                {
+                    if (defaultBURef == null)
+                    {
+                        QueryExpression buQuery = new QueryExpression("businessunit");
+                        buQuery.Criteria.AddCondition("parentbusinessunitid", ConditionOperator.Null);
+                        defaultBURef = QueryHelper.RetrieveSingleEntity(context.OrganizationService, buQuery).ToEntityReference();
+                    }
+
+                    result[buAttrName] = defaultBURef;
+                }
+            }
             return result;
         }
 
-        private EntityReference GetEntityReference(IOrganizationService orgService, XmlElement attrNode, LookupAttributeMetadata attrMeta)
+        private EntityReference GetEntityReference(CrmContext context, XmlElement attrNode, LookupAttributeMetadata attrMeta)
         {
+            // Create List of all possible Entity References to return
             List<EntityReference> possibles = new List<EntityReference>();
 
             // First, see if there is an <ent> element within this <attr> element
             XmlElement entityNode = attrNode.SelectSingleNode("ent") as XmlElement;
 
-            // If not, assume Inner Text is Primary Name Value, and reference could be any of the types supported by this attribute
             if (entityNode == null)
             {
-                string name = attrNode.InnerText;
-                if (string.IsNullOrWhiteSpace(name)) return null;
-                foreach (string lookupEntityType in attrMeta.Targets)
-                {
-                    possibles.Add(new EntityReference(lookupEntityType, Guid.Empty) { Name = name });
-                }
+                // If not, assume Inner Text is Primary Name Value, and reference could be any of the types supported by this attribute, with an unknown GUID
+                if (string.IsNullOrWhiteSpace(attrNode.InnerText)) return null;
+                possibles.AddRange(attrMeta.Targets.Select(q => new EntityReference(q, Guid.Empty) { Name = attrNode.InnerText }));
             }
             else
             {
-                string lookupEntityType = entityNode.GetAttribute("ln");
-                if (lookupEntityType == "adx_webfile") return null; // TEMP
-                EntityMetadata lookupMeta = metaCache.GetEntityMetadata(orgService, lookupEntityType);
-                XmlElement primaryNode = entityNode.SelectSingleNode("attr[@ln='" + lookupMeta.PrimaryNameAttribute + "']") as XmlElement;
-                possibles.Add(new EntityReference(lookupEntityType, entityNode.GetAttribute("id").ToGuid()) { Name = (primaryNode == null) ? null : primaryNode.InnerText });
+                // Otherwise, just add a single "possible"
+                EntityMetadata entityMeta = MetadataHelper.GetEntityMetadata(context, entityNode.GetAttribute("ln"));
+                XmlElement primaryNode = entityNode.SelectSingleNode("attr[@ln='" + entityMeta.PrimaryNameAttribute + "']") as XmlElement;
+                possibles.Add(new EntityReference(entityMeta.LogicalName, entityNode.GetAttribute("id").ToGuid()) { Name = (primaryNode == null) ? null : primaryNode.InnerText });
             }
 
-            foreach (EntityReference possible in possibles)
+            // Also add any mappings from IdMappings collection into "possibles"
+            possibles.AddRange(possibles.Where(q => this.IdMappings.ContainsKey(q.Id)).Select(q => new EntityReference(q.LogicalName, this.idMappings[q.Id])).ToArray());
+
+            // Try to find a known existing reference. If none of the "possibles" has an ID supplied, allow match by Name, otherwise allow match by ID only at this stage
+            EntityReference result = null;
+            if (possibles.Any(q => q.Id != Guid.Empty))
             {
-                if (possible.Id == Guid.Empty && string.IsNullOrWhiteSpace(possible.Name)) continue;
+                result = knownExist.Where(q => possibles.Any(x => q.Id == x.Id && q.LogicalName == x.LogicalName)).FirstOrDefault();
+            }
+            else
+            {
+                result = knownExist.Where(q => possibles.Any(x => q.Name == x.Name && q.LogicalName == x.LogicalName)).FirstOrDefault();
+            }
+            if (result != null) return result;
 
-                // See if "possible" already exists in Lookup Cache - it will be in the cache with an empty GUID if it's already been checked and doesn't exist in CRM.
-                EntityReference result = null;
-                if (possible.Id != Guid.Empty) result = lookupCache.SingleOrDefault(q => q.LogicalName == possible.LogicalName && q.Id == possible.Id);
-                if (result == null && !string.IsNullOrEmpty(possible.Name)) result = lookupCache.SingleOrDefault(q => q.LogicalName == possible.LogicalName && q.Name == possible.Name);
+            // If a reference was not found, we may need to go to CRM before attempting again
 
-                // If not, attempt to retrieve it
-                if (result == null)
+            // Remove any empty references from the list of "possibles"
+            IEnumerable<EntityReference> emptyReferences = possibles.Where(q => q.Id == Guid.Empty && string.IsNullOrWhiteSpace(q.Name));
+            if (emptyReferences.Any()) possibles = possibles.Except(emptyReferences).ToList();
+            if (!possibles.Any()) return null;
+
+            // A query to CRM is required if "possibles" contains any references with no ID, or with IDs not yet known not to exist
+            if (possibles.Any(q => q.Id == Guid.Empty || !knownNonExist.Any(x => q.Id == x.Id && q.LogicalName == x.LogicalName)))
+            {
+                // Look for records in CRM using the IDs and Names supplied in the list of "possibles"
+                foreach (string entityType in possibles.Select(q => q.LogicalName).Distinct())
                 {
-                    EntityMetadata lookupMeta = metaCache.GetEntityMetadata(orgService, possible.LogicalName);
+                    EntityMetadata entityMeta = MetadataHelper.GetEntityMetadata(context, entityType);
+                    IEnumerable<EntityReference> possiblesOfThisType = possibles.Where(q => q.LogicalName == entityType);
+                    IEnumerable<Guid> queryIds = possiblesOfThisType.Select(q => q.Id).Distinct();
+                    IEnumerable<string> queryNames = possiblesOfThisType.Where(q => !string.IsNullOrEmpty(q.Name)).Select(q => q.Name).Distinct();
 
-                    QueryExpression query = new QueryExpression(lookupMeta.LogicalName);
+                    QueryExpression query = new QueryExpression(entityType) { ColumnSet = new ColumnSet(entityMeta.PrimaryNameAttribute) };
                     query.Criteria.FilterOperator = LogicalOperator.Or;
-                    if (possible.Id != Guid.Empty) query.Criteria.AddCondition(lookupMeta.PrimaryIdAttribute, ConditionOperator.Equal, possible.Id);
-                    if (!string.IsNullOrWhiteSpace(possible.Name)) query.Criteria.AddCondition(lookupMeta.PrimaryNameAttribute, ConditionOperator.Equal, possible.Name);
+                    if (queryIds.Any()) query.Criteria.AddCondition(entityMeta.PrimaryIdAttribute, ConditionOperator.In, queryIds.Cast<object>().ToArray());
+                    if (queryNames.Any()) query.Criteria.AddCondition(entityMeta.PrimaryNameAttribute, ConditionOperator.In, queryNames.Cast<object>().ToArray());
 
-                    if (lookupMeta.LogicalName == "systemuser")
+                    // Additional filter for Users
+                    if (entityMeta.LogicalName == "systemuser")
                     {
                         FilterExpression fe = new FilterExpression();
                         fe.AddCondition("isdisabled", ConditionOperator.Equal, false);
@@ -204,18 +259,29 @@ namespace Maximis.Toolkit.Xrm.EntitySerialisation
                         query.Criteria.AddFilter(fe);
                     }
 
-                    Entity lookupEntity = QueryHelper.RetrieveSingleEntity(orgService, query);
+                    // Retrieve new Entity References
+                    IEnumerable<EntityReference> newReferences = context.OrganizationService.RetrieveMultiple(query).Entities.Select(q => new EntityReference(q.LogicalName, q.Id) { Name = q.GetAttributeValue<string>(entityMeta.PrimaryNameAttribute) });
 
-                    if (lookupEntity == null) result = new EntityReference(lookupMeta.LogicalName, Guid.Empty);
-                    else result = lookupEntity.ToEntityReference();
-                    result.Name = possible.Name;
-
-                    lookupCache.Add(result);
+                    // Add to lists of known existing and known non-existing records
+                    knownExist.AddRange(newReferences.Where(q => !knownExist.Any(x => q.Id == x.Id && q.LogicalName == x.LogicalName)));
+                    knownNonExist.AddRange(queryIds.Where(q => !knownNonExist.Any(x => q == x.Id && x.LogicalName == entityType)).Select(q => new EntityReference(entityType, q)));
                 }
 
-                if (result.Id != Guid.Empty) return result;
+                // Try again to find a known existing reference by ID now more records have been retrieved
+                if (possibles.Any(q => q.Id != Guid.Empty))
+                {
+                    result = knownExist.Where(q => possibles.Any(x => q.Id == x.Id && q.LogicalName == x.LogicalName)).FirstOrDefault();
+                }
             }
-            return null;
+
+            // Finally, allow match by name even if ID has been supplied, as ID does not exist in CRM
+            if (result == null)
+            {
+                result = knownExist.Where(q => possibles.Any(x => q.Name == x.Name && q.LogicalName == x.LogicalName)).FirstOrDefault();
+            }
+
+            // Return
+            return result;
         }
     }
 }

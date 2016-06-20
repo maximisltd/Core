@@ -3,6 +3,7 @@ using Maximis.Toolkit.IO;
 using Microsoft.VisualBasic.FileIO;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Metadata;
+using Microsoft.Xrm.Sdk.Query;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -18,26 +19,25 @@ namespace Maximis.Toolkit.Xrm.ImportExport
     {
         #region Export
 
-        public static void Export(IOrganizationService orgService, string filePath, CsvExportOptions options)
+        public static void Export(CrmContext context, string filePath, CsvExportOptions options)
         {
             FileHelper.EnsureDirectoryExists(filePath, PathType.File);
-            using (StreamWriter sw = new StreamWriter(filePath)) Export(orgService, sw, options);
+            using (StreamWriter sw = new StreamWriter(filePath)) Export(context, sw, options);
         }
 
-        public static void Export(IOrganizationService orgService, TextWriter output, CsvExportOptions options)
+        public static void Export(CrmContext context, TextWriter output, CsvExportOptions options)
         {
-            MetadataCache metaCache = new MetadataCache();
-
-            string[] attributes = ImportExportHelper.GetAllQueryAttributes(orgService, options.QueryExpression, metaCache);
+            string[] attributes = ImportExportHelper.GetAllQueryAttributes(context, options.QueryExpression);
+            if (attributes.Length == 0) throw new InvalidOperationException("Query ColumnSet is missing or empty.");
 
             string[] columnHeadings = string.IsNullOrEmpty(options.HeaderFormat) ? attributes :
-               GetColumnHeadings(orgService, options.QueryExpression.EntityName, attributes, metaCache, options.HeaderFormat);
+               GetColumnHeadings(context, options.QueryExpression.EntityName, attributes, options.HeaderFormat);
 
-            CsvWriter csvWriter = new CsvWriter(output, columnHeadings);
+            CsvWriter csvWriter = new CsvWriter(output, true, columnHeadings);
 
             EntityCollection results = null;
             int exportCount = 0;
-            while (QueryHelper.RetrieveEntitiesWithPaging(orgService, options.QueryExpression, ref results, options.RecordsPerPage))
+            while (QueryHelper.RetrieveEntitiesWithPaging(context.OrganizationService, options.QueryExpression, ref results, options.RecordsPerPage))
             {
                 foreach (Entity entity in results.Entities)
                 {
@@ -45,7 +45,7 @@ namespace Maximis.Toolkit.Xrm.ImportExport
 
                     for (int i = 0; i < attributes.Length; i++)
                     {
-                        string val = MetadataHelper.GetAttributeValueAsDisplayString(orgService, metaCache, entity, attributes[i], options);
+                        string val = MetadataHelper.GetAttributeValueAsDisplayString(context, entity, attributes[i], options);
                         csvWriter.WriteValue(i, val);
                     }
                 }
@@ -53,9 +53,65 @@ namespace Maximis.Toolkit.Xrm.ImportExport
             }
         }
 
-        private static string[] GetColumnHeadings(IOrganizationService orgService, string entityName, string[] attributes, MetadataCache metaCache, string headerFormat)
+        public static void ExportRelationships(CrmContext context, string filePath, params string[] entityTypes)
         {
-            EntityMetadata meta = metaCache.GetEntityMetadata(orgService, entityName);
+            FileHelper.EnsureDirectoryExists(filePath, PathType.File);
+            using (StreamWriter sw = new StreamWriter(filePath)) ExportRelationships(context, sw, entityTypes);
+        }
+
+        public static void ExportRelationships(CrmContext context, TextWriter output, params string[] entityTypes)
+        {
+            List<Guid> processed = new List<Guid>();
+
+            CsvWriter csvWriter = new CsvWriter(output, true, new string[] { "Record 1 Type", "Record 1 Id", "Record 2 Type", "Record 2 Id", "Relationship" });
+
+            EntityCollection results = null;
+
+            foreach (string type1 in entityTypes)
+            {
+                results = null;
+                EntityMetadata entityMeta = MetadataHelper.GetEntityMetadata(context, type1, EntityFilters.Entity | EntityFilters.Relationships);
+                while (QueryHelper.RetrieveEntitiesWithPaging(context.OrganizationService, new QueryExpression(entityMeta.LogicalName), ref results))
+                {
+                    foreach (Entity entity in results.Entities)
+                    {
+                        foreach (string type2 in entityTypes.Where(q => q != type1))
+                        {
+                            foreach (OneToManyRelationshipMetadata relMeta in entityMeta.OneToManyRelationships.Where(q => q.ReferencingEntity == type2 || q.ReferencedEntity == type2))
+                            {
+                                ExportRelationshipsWorker(context, entity.ToEntityReference(), relMeta, csvWriter, ref processed);
+                            }
+                            foreach (OneToManyRelationshipMetadata relMeta in entityMeta.ManyToOneRelationships.Where(q => q.ReferencingEntity == type2 || q.ReferencedEntity == type2))
+                            {
+                                ExportRelationshipsWorker(context, entity.ToEntityReference(), relMeta, csvWriter, ref processed);
+                            }
+                            foreach (ManyToManyRelationshipMetadata relMeta in entityMeta.ManyToManyRelationships.Where(q => q.Entity1LogicalName == type2 || q.Entity2LogicalName == type2))
+                            {
+                                ExportRelationshipsWorker(context, entity.ToEntityReference(), relMeta, csvWriter, ref processed);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void ExportRelationshipsWorker(CrmContext context, EntityReference entityReference, RelationshipMetadataBase relMeta, CsvWriter csvWriter, ref List<Guid> processed)
+        {
+            foreach (Entity related in QueryHelper.RetrieveRelatedEntities(context.OrganizationService, entityReference, relMeta).Entities)
+            {
+                if (processed.Contains(related.Id)) continue;
+                csvWriter.WriteValue(0, entityReference.LogicalName);
+                csvWriter.WriteValue(1, entityReference.Id.ToString("N"));
+                csvWriter.WriteValue(2, related.LogicalName);
+                csvWriter.WriteValue(3, related.Id.ToString("N"));
+                csvWriter.WriteValue(4, relMeta.SchemaName);
+            }
+            processed.Add(entityReference.Id);
+        }
+
+        private static string[] GetColumnHeadings(CrmContext context, string entityName, string[] attributes, string headerFormat)
+        {
+            EntityMetadata meta = MetadataHelper.GetEntityMetadata(context, entityName);
             return attributes.Select(q => string.Format(headerFormat, q, GetLabel(meta.Attributes.SingleOrDefault(x => x.LogicalName == q.RightOfLast('.'))))).ToArray();
         }
 
@@ -72,23 +128,26 @@ namespace Maximis.Toolkit.Xrm.ImportExport
 
         private static readonly Regex REGEX_SQUAREBRACKETS = new Regex(@"\[.*?\]", RegexOptions.Compiled);
 
-        public static void Import(IOrganizationService orgService, string filePath, CsvImportOptions options)
+        public static void Import(CrmContext context, string filePath, CsvImportOptions options)
         {
             using (StreamReader sr = new StreamReader(filePath))
             {
-                Import(orgService, sr, options);
+                Import(context, sr, options);
             }
         }
 
-        public static void Import(IOrganizationService orgService, TextReader input, CsvImportOptions options)
+        public static void Import(CrmContext context, TextReader input, CsvImportOptions options)
         {
             // Get Entity Metadata
-            MetadataCache metaCache = new MetadataCache();
-            EntityMetadata meta = metaCache.GetEntityMetadata(orgService, options.EntityType);
+            EntityMetadata meta = MetadataHelper.GetEntityMetadata(context, options.EntityType);
 
-            using (XmlImportManager xmlImport = new XmlImportManager(orgService, metaCache, options))
+            using (XmlImportManager xmlImport = new XmlImportManager(context, options))
             using (CsvReader csvParser = new CsvReader(input))
             {
+                // If Headings are in format "attributename (Attribute Label)", replace with
+                // "attributename" only
+                csvParser.HeadingIndex = csvParser.HeadingIndex.ToDictionary(k => k.Key.LeftOfFirst('(').Trim(), v => v.Value);
+
                 // Find the column containing the ID (there may not be one)
                 int idIndex = csvParser.HeadingIndex.ContainsKey(meta.PrimaryIdAttribute) ? csvParser.HeadingIndex[meta.PrimaryIdAttribute] : int.MinValue;
 
@@ -144,7 +203,8 @@ namespace Maximis.Toolkit.Xrm.ImportExport
                                     case AttributeTypeCode.Lookup:
                                     case AttributeTypeCode.Owner:
                                     case AttributeTypeCode.Customer:
-                                        EntityReference entityRef = GetEntityReference(metaCache, orgService, val);
+                                        LookupAttributeMetadata lookupMeta = (LookupAttributeMetadata)attrMeta;
+                                        EntityReference entityRef = GetEntityReference(context, val, lookupMeta.Targets);
                                         if (entityRef != null)
                                         {
                                             writeString = false;
@@ -152,7 +212,7 @@ namespace Maximis.Toolkit.Xrm.ImportExport
                                             xtw.WriteAttributeString("ln", entityRef.LogicalName);
                                             xtw.WriteAttributeString("id", entityRef.Id.ToString("D"));
                                             xtw.WriteStartElement("attr");
-                                            xtw.WriteAttributeString("ln", metaCache.GetEntityMetadata(orgService, entityRef.LogicalName).PrimaryNameAttribute);
+                                            xtw.WriteAttributeString("ln", MetadataHelper.GetEntityMetadata(context, entityRef.LogicalName).PrimaryNameAttribute);
                                             xtw.WriteString(entityRef.Name);
                                             xtw.WriteEndElement();
                                             xtw.WriteEndElement();
@@ -194,7 +254,29 @@ namespace Maximis.Toolkit.Xrm.ImportExport
             }
         }
 
-        private static EntityReference GetEntityReference(MetadataCache metaCache, IOrganizationService orgService, string val)
+        public static void ImportRelationships(CrmContext context, string filePath)
+        {
+            using (StreamReader sr = new StreamReader(filePath))
+            {
+                ImportRelationships(context, sr);
+            }
+        }
+
+        public static void ImportRelationships(CrmContext context, StreamReader input)
+        {
+            using (CsvReader csvParser = new CsvReader(input))
+            {
+                while (!csvParser.EndOfData)
+                {
+                    string[] csvData = csvParser.ReadFields();
+                    EntityReference relateFrom = new EntityReference(csvData[0], new Guid(csvData[1]));
+                    EntityReference relateTo = new EntityReference(csvData[2], new Guid(csvData[3]));
+                    UpdateHelper.RelateEntities(context.OrganizationService, csvData[4], relateFrom, relateTo);
+                }
+            }
+        }
+
+        private static EntityReference GetEntityReference(CrmContext context, string val, string[] lookupTargets)
         {
             EntityReference result = new EntityReference();
             foreach (string s in GetValuesFromSquareBrackets(val))
@@ -212,7 +294,7 @@ namespace Maximis.Toolkit.Xrm.ImportExport
                 {
                     try
                     {
-                        EntityMetadata meta = metaCache.GetEntityMetadata(orgService, s);
+                        EntityMetadata meta = MetadataHelper.GetEntityMetadata(context, s);
                         result.LogicalName = meta.LogicalName;
                         continue;
                     }
@@ -221,7 +303,17 @@ namespace Maximis.Toolkit.Xrm.ImportExport
                 result.Name = s;
             }
 
-            if (result.Id == Guid.Empty || string.IsNullOrEmpty(result.LogicalName)) return null;
+            if (result.Id == Guid.Empty) return null;
+
+            if (string.IsNullOrEmpty(result.LogicalName))
+            {
+                if (lookupTargets.Length == 1)
+                {
+                    result.LogicalName = lookupTargets[0];
+                }
+                else return null;
+            }
+
             return result;
         }
 

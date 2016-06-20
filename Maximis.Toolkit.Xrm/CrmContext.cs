@@ -1,27 +1,66 @@
-﻿using Microsoft.Xrm.Sdk.Client;
+﻿using Maximis.Toolkit.Caching;
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+using System;
 
 namespace Maximis.Toolkit.Xrm
 {
     public class CrmContext
     {
-        public AuthenticationProviderType AuthenticationProviderType { get; set; }
+        private EntityReference defaultCurrency;
 
-        public string Domain { get; set; }
+        public CrmContext()
+        {
+        }
 
-        public string HostName { get; set; }
+        public CrmContext(IOrganizationService orgService)
+        {
+            this.TracingService = new TracingService(new DiagnosticTracingService());
+            this.CacheManager = new CacheManager(Guid.NewGuid().ToString());
+            this.OrganizationService = orgService;
+        }
 
-        public string Organization { get; set; }
+        public CrmContext(IOrganizationService orgService, string uniqueName)
+        {
+            this.TracingService = new TracingService(new DiagnosticTracingService());
+            this.CacheManager = new CacheManager(uniqueName);
+            this.OrganizationService = orgService;
+        }
 
-        public string Password { get; set; }
+        public CacheManager CacheManager { get; set; }
 
-        public int Port { get; set; }
+        public EntityReference DefaultCurrency
+        {
+            get
+            {
+                if (defaultCurrency == null)
+                {
+                    defaultCurrency = OrganizationService.Retrieve("organization", this.ExecutionContext.OrganizationId,
+                        new ColumnSet("basecurrencyid")).GetAttributeValue<EntityReference>("basecurrencyid");
+                }
+                return defaultCurrency;
+            }
+        }
 
-        public bool Secure { get; set; }
+        public IExecutionContext ExecutionContext { get; set; }
 
-        public double TimeoutSeconds { get; set; }
+        public IOrganizationService OrganizationService { get; set; }
 
-        public string Username { get; set; }
+        public ITracingService TracingService { get; set; }
 
-        public string Version { get; set; }
+        public string GetTraceLog()
+        {
+            TracingService tracingService = this.TracingService as TracingService;
+            if (tracingService == null) return null;
+            return tracingService.ToString();
+        }
+
+        private class DiagnosticTracingService : ITracingService
+        {
+            public void Trace(string format, params object[] args)
+            {
+                System.Diagnostics.Trace.WriteLine(string.Format(format, args));
+            }
+        }
     }
 }

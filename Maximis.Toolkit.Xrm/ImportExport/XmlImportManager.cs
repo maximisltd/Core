@@ -14,19 +14,17 @@ namespace Maximis.Toolkit.Xrm.ImportExport
 {
     internal class XmlImportManager : IDisposable
     {
+        private CrmContext context;
         private OrganizationRequestCollection createUpdateRequests;
         private EntityDeserialiser deserialiser;
-        private MetadataCache metaCache;
         private ImportOptions options;
-        private IOrganizationService orgService;
         private OrganizationRequestCollection setStateRequests;
 
-        public XmlImportManager(IOrganizationService orgService, MetadataCache metaCache, ImportOptions options)
+        public XmlImportManager(CrmContext context, ImportOptions options)
         {
-            this.orgService = orgService;
-            this.metaCache = metaCache;
+            this.context = context;
             this.options = options;
-            this.deserialiser = new EntityDeserialiser(metaCache);
+            this.deserialiser = new EntityDeserialiser(context);
 
             this.createUpdateRequests = new OrganizationRequestCollection();
             this.setStateRequests = new OrganizationRequestCollection();
@@ -43,13 +41,13 @@ namespace Maximis.Toolkit.Xrm.ImportExport
         internal void AddForImport(string xml)
         {
             // Deserialise into Entity
-            Entity newEntity = deserialiser.DeserialiseEntity(orgService, xml, options);
+            Entity newEntity = deserialiser.DeserialiseEntity(xml, options);
 
             // Drop out if Entity is empty
             if (newEntity.Id == Guid.Empty && !newEntity.Attributes.Any()) return;
 
             // Get Metadata for Entity
-            EntityMetadata meta = metaCache.GetEntityMetadata(orgService, newEntity.LogicalName);
+            EntityMetadata meta = MetadataHelper.GetEntityMetadata(context, newEntity.LogicalName);
 
             // Check for Existing Record if required
             Entity existingEntity = null;
@@ -68,7 +66,7 @@ namespace Maximis.Toolkit.Xrm.ImportExport
                     case CheckForExistingMode.Id:
 
                         existingQuery.Criteria.AddCondition(meta.PrimaryIdAttribute, ConditionOperator.Equal, newEntity.Id);
-                        existingEntity = QueryHelper.RetrieveSingleEntity(orgService, existingQuery);
+                        existingEntity = QueryHelper.RetrieveSingleEntity(context.OrganizationService, existingQuery);
                         break;
 
                     case CheckForExistingMode.AllAttributes:
@@ -97,7 +95,7 @@ namespace Maximis.Toolkit.Xrm.ImportExport
                             }
                             if (existingQuery.Criteria.Conditions.Count > 0)
                             {
-                                existingEntity = QueryHelper.RetrieveSingleEntity(orgService, existingQuery);
+                                existingEntity = QueryHelper.RetrieveSingleEntity(context.OrganizationService, existingQuery);
                                 if (existingEntity != null) break;
                             }
 
@@ -106,20 +104,6 @@ namespace Maximis.Toolkit.Xrm.ImportExport
 
                         break;
                 }
-            }
-
-            // Make sure IDs are set correctly
-            bool isNew = false;
-            if (existingEntity == null)
-            {
-                if (newEntity.Id == Guid.Empty) newEntity.Id = Guid.NewGuid();
-                isNew = true;
-            }
-            else
-            {
-                // Existing Entity might have a different ID if ID was not criteria used for existing match
-                newEntity.Id = existingEntity.Id;
-                if (newEntity.Contains(meta.PrimaryIdAttribute)) newEntity[meta.PrimaryIdAttribute] = newEntity.Id;
             }
 
             // If statecode and statuscode have been set, remove those values from the Entity and create a SetStateRequest instead
@@ -136,13 +120,17 @@ namespace Maximis.Toolkit.Xrm.ImportExport
             }
 
             // Create either CreateRequest or UpdateRequest
-            if (isNew)
+            if (existingEntity == null)
             {
-                Trace.Write(string.Format("Creating new {0} record '{1}'...", newEntity.LogicalName, newEntity.Id));
+                Trace.Write(string.Format("Creating new {0} record...", newEntity.LogicalName));
                 createUpdateRequests.Add(new CreateRequest { Target = newEntity });
             }
             else
             {
+                // Existing Entity might have a different ID if ID was not criteria used for existing match
+                newEntity.Id = existingEntity.Id;
+                if (newEntity.Contains(meta.PrimaryIdAttribute)) newEntity[meta.PrimaryIdAttribute] = newEntity.Id;
+
                 // Filter down to only changed attributes
                 newEntity = UpdateHelper.GetUpdateEntity(newEntity, existingEntity);
 
@@ -169,8 +157,8 @@ namespace Maximis.Toolkit.Xrm.ImportExport
         {
             using (TraceProgressReporter progress = new TraceProgressReporter("Writing to CRM"))
             {
-                BulkOperationHelper.PerformExecuteMultiple(orgService, createUpdateRequests, createUpdateRequests.Count, progress, options.ContinueOnError);
-                BulkOperationHelper.PerformExecuteMultiple(orgService, setStateRequests, setStateRequests.Count, progress, options.ContinueOnError);
+                BulkOperationHelper.PerformExecuteMultiple(context, createUpdateRequests, createUpdateRequests.Count, options.ContinueOnError);
+                BulkOperationHelper.PerformExecuteMultiple(context, setStateRequests, setStateRequests.Count, options.ContinueOnError);
             }
             createUpdateRequests.Clear();
             setStateRequests.Clear();
